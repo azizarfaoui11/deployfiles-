@@ -1,0 +1,773 @@
+import com.cloudbees.plugins.credentials.*
+import com.cloudbees.plugins.credentials.domains.Domain
+import com.cloudbees.plugins.credentials.impl.*
+import hudson.util.Secret
+import jenkins.model.Jenkins
+pipeline {
+        agent any
+    
+   
+    tools {
+        maven "maven"
+       // nodejs "node"
+    }
+
+   
+    environment {
+        NEXUS_VERSION = "nexus3"
+        NEXUS_PROTOCOL = "http"
+        NEXUS_URL = "192.168.33.10:8081"
+       
+         
+    }
+
+   
+     stages {
+        
+        
+      
+
+        stage("Clone code from GitHub") {
+          when {
+           expression { params.TARGET_STAGE1 == 'clone' }
+        }
+         
+            steps {
+                script {
+                       catchError {
+    checkout([$class: 'GitSCM', branches: [[name: '*/main']], userRemoteConfigs: [[url: "${params.GITHUB_URL}", credentialsId: 'git-cred']]])
+}
+
+
+                }
+            }
+       }
+       
+       
+       
+        /*stage("test docker") {
+       
+    steps {
+        script {
+            
+            echo "connexion"
+                      
+              //def dockerUsername = params['docker-username']
+              //def dockerPassword = params['docker-password']
+              def username = "salah070"
+              def password = "toutvabien"
+
+              sh "docker login -u ${username} -p ${password}"
+                def getTokenCommand = "curl -s -H 'Content-Type: application/json' -X POST -d '{\"username\": \"$username\", \"password\": \"$password\"}' https://hub.docker.com/v2/users/login/ | jq -r .token"
+                def TOKEN = sh(script: getTokenCommand, returnStdout: true).trim()
+                    echo "Token: $TOKEN"
+
+            // Créer le référentiel Docker Hub
+            def createRepoCommand = """
+                curl -s -H 'Authorization: JWT $TOKEN' -H 'Content-Type: application/json' -X POST \
+                -d '{"description": "test", "full_description": "full-description", "is_private": false, "name": "firstrepo", "namespace": "${username}"}' \
+                https://hub.docker.com/v2/repositories/
+            """
+
+            sh(createRepoCommand)
+              
+            
+     
+        }}}
+      
+
+
+        */
+      
+
+      stage("Maven Build") {
+              when {
+           expression { params.TARGET_STAGE2 == 'maven' }
+        }
+
+         
+        
+            steps {
+                script {
+                    sh "mvn -Dmaven.test.failure.ignore=true clean package"
+                  
+                }
+            }
+        }
+        
+        
+        stage("Gradle Build") {
+    when {
+        expression { params.TARGET_STAGE2 == 'gradle' }
+    }
+    steps {
+        script {
+            sh "./gradlew build" 
+        }
+    }
+}
+
+stage('Test') {
+    when {
+        expression { params.TARGET_STAGE11 == 'junit' }
+    }
+            steps {
+                sh 'mvn test'
+                junit 'target/surefire-reports/*.xml'
+            }
+        }
+        
+         
+       
+          stage("Create SonarQube Project") {
+                when {
+           expression { params.TARGET_STAGE3 == 'sonarqube' }
+        }
+
+              
+    steps {
+        script {
+           def sonarServerUrl = "http://192.168.33.10:9000" // Remplacez par l'URL de votre serveur SonarQube
+            def sonarAuthToken = "squ_da5c2177a5cea231003c8ef5466729993cb7ab56" // Remplacez par votre token SonarQube ou utilisez des informations d'identification
+
+            def projectName = "restit" // Remplacez par le nom de votre projet
+            def projectKey = "restit" // Remplacez par une cl  unique pour votre projet
+            
+            sh """
+                curl -u ${sonarAuthToken}: -X POST "${sonarServerUrl}/api/projects/create?name=${projectName}&project=${projectKey}"
+            """
+
+               
+
+           
+                sh """
+                set +x
+               mvn sonar:sonar -Dsonar.host.url=${sonarServerUrl} -Dsonar.login=${sonarAuthToken} -Dsonar.projectKey=${projectKey}
+                set -x
+                  
+                  """
+
+        }
+    }
+}
+     
+      
+
+
+
+       
+        
+        //ne fonctionne pas ce stage 
+       /* stage("Run SonarQube Analysis") {
+         
+    steps {
+     script {
+                      withSonarQubeEnv('test') 
+         {
+
+            def sonarUsername = "aziz"
+            def sonarPassword = "hamaarfaoui123456"
+
+            withCredentials([usernamePassword(credentialsId: 'sonar-cred', usernameVariable: 'sonarUsername', passwordVariable: 'sonarPassword')]) {
+                
+                 sh """
+                set +x
+               mvn sonar:sonar  -Dsonar.projectKey=proj3
+                  set -x
+                  
+                  """
+            }
+         
+            echo 'Static Analysis Completed' 
+   	      
+         }
+     
+      }
+            
+        }
+    }*/
+    
+    
+
+
+     stage('Create Jenkins Credentials') {
+          
+            steps {
+                script {
+                  def nexusUsername = "admin"
+                  def nexusPassword = "admin1"
+                   credentialsId = UUID.randomUUID().toString()
+
+// imports
+     
+
+// parameters
+def jenkinsKeyUsernameWithPasswordParameters = [
+  description:  'credentialsnexus',
+  id:           credentialsId,
+  secret:       nexusPassword,
+  userName:     nexusUsername
+]
+
+// get Jenkins instance
+Jenkins jenkins = Jenkins.getInstance()
+
+// get credentials domain
+def domain = Domain.global()
+
+// get credentials store
+def store = jenkins.getExtensionList('com.cloudbees.plugins.credentials.SystemCredentialsProvider')[0].getStore()
+
+// define Bitbucket secret
+def jenkinsKeyUsernameWithPassword = new UsernamePasswordCredentialsImpl(
+  CredentialsScope.GLOBAL,
+  jenkinsKeyUsernameWithPasswordParameters.id,
+  jenkinsKeyUsernameWithPasswordParameters.description,
+  jenkinsKeyUsernameWithPasswordParameters.userName,
+  jenkinsKeyUsernameWithPasswordParameters.secret
+)
+
+// add credential to store
+store.addCredentials(domain, jenkinsKeyUsernameWithPassword)
+
+// save to disk
+jenkins.save() 
+                   
+                }
+            }
+       }
+
+
+        
+        
+    
+         stage("Publish to Nexus Repository Manager") {
+                when {
+           expression { params.TARGET_STAGE5 == 'nexus' }
+        }
+           
+            
+            steps {
+               
+                script {
+                    
+                     def nexusRepository = "repo"
+
+                     
+                    pom = readMavenPom file: "pom.xml";
+                    filesByGlob = findFiles(glob: "target/*.${pom.packaging}");
+                    echo "${filesByGlob[0].name} ${filesByGlob[0].path} ${filesByGlob[0].directory} ${filesByGlob[0].length} ${filesByGlob[0].lastModified}"
+                    artifactPath = filesByGlob[0].path;
+                    artifactExists = fileExists artifactPath;
+
+                    if(artifactExists) {
+                        echo "*** File: ${artifactPath}, group: ${pom.groupId}, packaging: ${pom.packaging}, version ${pom.version}";
+ 
+
+                    
+                        nexusArtifactUploader(
+                            nexusVersion: NEXUS_VERSION,
+                            protocol: NEXUS_PROTOCOL,
+                            nexusUrl: NEXUS_URL,
+                            groupId: pom.groupId,
+                            version: pom.version,
+                            repository: nexusRepository,
+                            credentialsId:credentialsId ,
+                           // token: nexusToken,
+                             //username: nexus_username ,
+                             //password: nexus_password,
+                           // usernameVariable: "${nexus_username}",
+                            //passwordVariable: "${nexus_password}",
+                            artifacts: [
+                                [artifactId: pom.artifactId,
+                                classifier: '',
+                                file: artifactPath,
+                                type: pom.packaging],
+                                [artifactId: pom.artifactId,
+                                classifier: '',
+                                file: "pom.xml",
+                                type: "pom"]
+                            ]
+                            
+                                  
+                    
+                        );
+                 
+                    }
+                    else {
+                        error "*** File: ${artifactPath}, could not be found";
+                    }
+                    }
+                  }
+                    
+                }
+                
+    
+     
+     
+    /*stage("Build and Push Docker Image") {
+       
+    steps {
+        script {
+            // Définir les informations d'authentification Docker Hub
+           
+            def imagename="backend-spring"
+           // def repo="firstrepo"
+            
+           // Générer un nom d'image aléatoire
+            def randomImageName = "back-${UUID.randomUUID().toString().substring(0, 8)}"
+            
+            // Récupérer le contenu du Dockerfile encodé en base64
+            def dockerfileContentBase64 = params['TARGET_STAGE8']
+            
+            
+              def username = "salah070"
+              def password = "toutvabien"
+
+              sh "docker login -u ${username} -p ${password}"
+              /*
+                def getTokenCommand = "curl -s -H 'Content-Type: application/json' -X POST -d '{\"username\": \"$username\", \"password\": \"$password\"}' https://hub.docker.com/v2/users/login/ | jq -r .token"
+                def TOKEN = sh(script: getTokenCommand, returnStdout: true).trim()
+                    echo "Token: $TOKEN"
+
+            // Créer le référentiel Docker Hub
+           def createRepoCommand = """
+                curl -s -H 'Authorization: JWT $TOKEN' -H 'Content-Type: application/json' -X POST \
+                -d '{"description": "test", "full_description": "full-description", "is_private": false, "name": "firstrepo", "namespace": "${username}"}' \
+                https://hub.docker.com/v2/repositories/
+            """*/
+
+           // sh(createRepoCommand)
+            
+           /* if (dockerfileContentBase64) {
+                // Décoder le contenu du Dockerfile
+                def dockerfileContent = new String(Base64.getDecoder().decode(dockerfileContentBase64))
+                
+                // Enregistrer le contenu du Dockerfile dans un fichier temporaire
+                def tempDockerfilePath = "${workspace}/tempDockerfile"
+                writeFile file: tempDockerfilePath, text: dockerfileContent
+                
+                // Construire l'image Docker en utilisant le Dockerfile temporaire avec le nom d'image aléatoire
+                echo "Building Docker image using dynamically generated Dockerfile..."
+                sh "docker build -t ${randomImageName}:latest -f ${tempDockerfilePath} ."
+                
+                // Renommer l'image
+                echo "Tagging Docker image with repository name..."
+                sh "docker tag ${randomImageName}:latest ${username}/${imagename}"
+                
+                // Pousser l'image Docker vers Docker Hub
+                echo "Pushing Docker image to Docker Hub..."
+                sh "docker push ${username}/${imagename}:latest"
+                
+                echo "Docker image successfully pushed to Docker Hub."
+            } else {
+                echo "TARGET_STAGE8 is empty. No Dockerfile content provided."
+            }
+        }
+    }
+}*/
+
+ stage("Build and Push Docker Image") {
+            
+
+         
+        
+            steps {
+                script {
+                echo "Pushing Docker image to Docker Hub..."
+                  
+                }
+            }
+        }
+        
+        stage("build and push frontend docker image") {
+            
+
+         
+        
+            steps {
+                script {
+                echo "Pushing Docker image to Docker Hub..."
+                  
+                }
+            }
+        }
+
+
+     
+     
+      
+    
+     
+    
+  /* stage("build and push frontend docker image") {
+        when {
+            expression { params.TARGET_STAGE6 == 'docker'  }
+        }
+        
+         //clonefrontend
+
+                steps {
+                script {
+                    
+           def imagename="frontend-angular"
+           // def repo="firstrepo"
+            
+           // Générer un nom d'image aléatoire
+            def randomImageName = "back-${UUID.randomUUID().toString().substring(0, 8)}"
+            
+                
+
+             echo "connexion"
+                     
+              def username = "salah070"
+              def password = "toutvabien"
+              def dockerfilefront = params['TARGET_STAGE7'] // R cup rez le chemin du Dockerfile
+
+              
+
+            
+            sh " docker login -u ${username} -p ${password} " 
+                
+                if (dockerfilefront){
+                    
+                def dockerfileContentt = new String(Base64.getDecoder().decode(dockerfilefront))
+                def tempDockerfilePath = "${workspace}/tempDockerfile"
+                def escapedTempDockerfilePath = tempDockerfilePath.replaceAll('\\\\', '\\\\\\\\')
+
+                
+                writeFile file: tempDockerfilePath, text: dockerfileContentt
+                
+                echo "Building Docker image using dynamically generated Dockerfile..."
+                sh "docker build -t ${randomImageName}:latest -f ${escapedTempDockerfilePath} ." 
+            
+            echo "renommer l'image"
+             sh "docker tag ${randomImageName}:latest ${username}/${imagename}"
+            echo "Pushing Docker image to Docker Hub..."
+             sh "docker push ${username}/${imagename}:latest"
+           
+            echo "Docker image successfully pushed to Docker Hub."
+                }
+                
+            }}}
+           
+*/
+
+
+        
+        stage('Deploy') {
+          when {
+            expression { params.TARGET_STAGE14 == 'deploy'  }
+         }
+    steps {
+        script {
+            //def databaseType = params.TARGET_STAGE9
+              def databaseType='MySQL'
+            
+            if (databaseType == 'MySQL') {
+                sh '''
+                    DATABASE_NAME=devops \
+                    SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/devops \
+                    SPRING_DATASOURCE_USERNAME=root \
+                    SPRING_DATASOURCE_PASSWORD= \
+                    docker-compose -f /home/vagrant/deployclient/docker-compose.yml up -d
+                '''
+            } else if (databaseType == 'MongoDB') {
+                sh '''
+                    DATABASE_NAME=devops \
+                    SPRING_DATA_MONGODB_URI=mongodb://localhost:27017/devops \
+                    docker-compose -f /home/vagrant/deployclient/docker-compose.yml up -d
+                '''
+            } else if (databaseType == 'PostgreSQL') {
+                sh '''
+                    DATABASE_NAME=devops \
+                    SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/devops \
+                    SPRING_DATASOURCE_USERNAME=votre_utilisateur \
+                    SPRING_DATASOURCE_PASSWORD=votre_mot_de_passe \
+                    docker-compose -f /home/vagrant/deployclient/docker-compose.yml up -d
+                '''
+            } else {
+                error "Type de base de données invalide"
+            }
+        }
+    }
+}
+
+   
+   
+  
+   
+   
+   
+   
+   
+   
+   
+            stage("jmeter Test") {
+                 when {
+            expression { params.TARGET_STAGE12 == 'jmeter'  }
+        }
+    steps {
+        script {
+        sh "/home/vagrant/apache-jmeter-5.6.3/bin/jmeter.sh -n -t /home/vagrant/.jenkins/workspace/projetpfe/script.jmx -l /home/vagrant/.jenkins/workspace/projetpfe/resultats.jtl -Jpath=stock"
+                  //  sh "ls -l /home/vagrant/jmeter" // Vérifie le contenu du répertoire
+        archiveArtifacts artifacts: 'resultats.jtl', onlyIfSuccessful: true
+
+        }
+    }
+}
+
+
+ }}
+ 
+ 
+ //pipeline deploy gcp:
+ pipeline {
+    agent any
+   /* environment {
+        KUBECONFIG = credentials('kubeconfig')
+    }*/
+    stages {
+       
+        stage('Deploy') {
+            steps {
+                script {
+                      catchError {
+    checkout([$class: 'GitSCM', branches: [[name: '*/main']], userRemoteConfigs: [[url: "https://github.com/azizarfaoui11/deployfiles-.git"]]])
+}
+                    // Deploy your application to the Kubernetes cluster
+                   // withKubeConfig([credentialsId: 'kubeconfig']) {
+                        sh 'kubectl apply -f k8s-mysql-deployment.yaml'
+                        sh 'kubectl apply -f k8s-spring-boot-deployment.yaml'
+                        sh 'kubectl apply -f k8s-angular-deployment.yaml'  
+                     //   }
+                }
+            }
+        }
+    }
+}
+
+ 
+        
+
+                
+        
+
+   /*        stage('Run Selenium Tests') {
+    steps {
+        sh 'java -cp /home/vagrant/selenuim/SeleniumTest.java SeleniumTest'
+    }
+}
+*/
+
+/*stage('Run Selenium Tests') {
+    steps {
+        sh 'java -cp /home/vagrant/client-combined-3.141.59.jar:/home/vagrant/selenuim/SeleniumTest.class:/home/vagrant/okhttp-4.9.2.jar:/home/vagrant/kotlin-stdlib-1.6.0.jar:/home/vagrant/okio-3.0.0.jar SeleniumTest'
+    }
+}
+*/
+
+
+
+
+
+        
+       /*
+         stage('Test') {
+            steps {
+                sh 'mvn test'
+                junit 'target/surefire-reports/*.xml'
+            }
+        }
+        /*
+       
+                
+                
+                 
+                
+        /*        stage("Build and Push Docker Image") {
+        
+    steps {
+        script {
+            
+            echo "connexion"
+                     
+              def dockerUsername ="aziz1123" 
+              def dockerPassword = "hamaarfaoui123456"
+              
+
+            
+            sh " docker login -u ${dockerUsername} -p ${dockerPassword} " 
+            
+         
+            
+         
+            echo "Building Docker image..."
+             sh "docker build -t backend:latest ." 
+           
+
+            echo "renommer l'image"
+             sh "docker tag backend:latest aziz1123/imagetest"
+            echo "Pushing Docker image to Docker Hub..."
+             sh "docker push aziz1123/imagetest:latest"
+           
+            echo "Docker image successfully pushed to Docker Hub."
+           
+        }
+    }
+        
+    }
+     
+     
+     
+     
+     
+     
+     
+      
+     
+    
+     
+     
+     
+     
+     
+     
+      
+        
+        
+      /*  stage("clone frontend")
+      */
+           
+     
+      
+    
+     
+    
+  /* stage("build and push frontend docker image") {
+        
+         
+            steps {
+                script {
+ 
+              echo "connexion"
+                     
+              def dockerUsername ="aziz1123" 
+              def dockerPassword = "hamaarfaoui123456"
+              
+
+            
+            sh " docker login -u ${dockerUsername} -p ${dockerPassword} " 
+            
+         
+            
+           
+            echo "Building Docker image..."
+             sh "docker build --no-cache -t frontend:latest ." 
+           
+
+            echo "renommer l'image"
+             sh "docker tag frontend:latest aziz1123/frontend-app"
+            echo "Pushing Docker image to Docker Hub..."
+             sh "docker push aziz1123/frontend-app:latest"
+           
+            echo "Docker image successfully pushed to Docker Hub."
+                }
+            }
+                
+                
+             
+                
+            }*/
+            
+            
+             /* stage("deploy"){   dans le fichier jenkinfile dans downloads*/ 
+        
+          
+        
+        
+     
+        
+      
+
+
+ 
+
+
+
+
+
+ 
+
+   /* post {
+        always {
+            script {
+                def pipelineStatus = currentBuild.currentResult
+
+                if (pipelineStatus == 'FAILURE') {
+                    try {
+                        def consoleOutput = currentBuild.rawBuild.getLog(1000)  // Récupère les 1000 dernières lignes de la console
+
+                        def errorLine = consoleOutput.findAll { it.contains("fatal") }.last()  // Trouve la dernière ligne contenant "fatal"
+                        def errorLine2 = consoleOutput.findAll { it.contains("ERROR") }.last() // Trouve la dernière ligne contenant "ERROR"
+                        def errorLine3 = consoleOutput.findAll { it.contains("Caused by") }.last() // Trouve la dernière ligne contenant "Caused by"
+
+                        def emailSubject = "Finished: FAILURE"
+                        emailSubject = emailSubject.replace("Adresse pas encore configurée", "Jenkins")
+
+                        def emailBody = "Détails de l'erreur ===>"
+                        emailBody += "\n${errorLine ?: 'Aucune information d\'erreur trouvée dans la console.'}"
+                        emailBody += "\n${errorLine2 ?: 'Aucune information d\'erreur trouvée dans la console.'}"
+                        emailBody += "\n${errorLine3 ?: 'Aucune information d\'erreur trouvée dans la console.'}"
+
+                        emailext subject: emailSubject,
+                            body: emailBody,
+                            to: 'mohamedaziz.arfaoui1@esprit.tn'
+                    } catch (Exception e) {
+                        echo "Erreur lors de la récupération des informations de la console."
+                    }
+                }
+               else if (pipelineStatus == 'SUCCESS') {
+                emailext subject: "Finished: SUCCESS",
+                    body: 'Votre pipeline a terminé avec succès.',
+                    to: 'mohamedaziz.arfaoui1@esprit.tn'
+                }
+                
+                
+                
+            }
+        }}
+    
+
+  
+*/
+
+
+     /*post {
+    always {
+        // Archiver les résultats avec le plugin Performance
+        perfReport percentiles: '0,50,100', sourceDataFiles: '/home/vagrant/jmeter/resultats.jtl'
+    }
+}
+*/
+
+
+
+
+
+
+        
+        
+    
+    
+    
+    
+  
+
+        
+        
+        
+        
+        
+    
+    
