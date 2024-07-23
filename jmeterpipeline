@@ -1,0 +1,33 @@
+pipeline {
+        agent any
+         stages {
+             
+                stage("jmeter Test") {
+           
+    steps {
+        script {
+            
+                   
+            
+        //sh "/home/vagrant/apache-jmeter-5.6.3/bin/jmeter.sh -n -t /home/vagrant/.jenkins/workspace/projetpfe/script.jmx -l /home/vagrant/.jenkins/workspace/projetpfe/resultats.jtl -Jpath=stock -Jhttp_method=GET -Jnum_threads=20 -Jnum_loops=2 -Jtest_duration=20"
+                
+                 sh """
+                        /home/vagrant/apache-jmeter-5.6.3/bin/jmeter.sh -n -t /home/vagrant/.jenkins/workspace/jmeter/script.jmx  \
+                        -l /home/vagrant/.jenkins/workspace/jmeter/resultats.jtl \
+                        -Jpath=${params.TARGET_STAGE24} \
+                        -Jhttp_method=${params.TARGET_STAGE23} \
+                        -Jnum_threads=${params.TARGET_STAGE25} \
+                        -Jnum_loops=${params.TARGET_STAGE26} \
+                        -Jtest_duration=${params.TARGET_STAGE27}
+                    """
+                        archiveArtifacts artifacts: 'resultats.jtl', onlyIfSuccessful: true
+
+        }
+    }
+}
+         
+     }
+     
+}
+        
+        

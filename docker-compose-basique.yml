@@ -1,0 +1,40 @@
+version: '3'
+services:
+  prometheuss:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+
+  grafanaa:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+
+  mysql:
+    image: mysql:latest
+    environment:
+      - MYSQL_ALLOW_EMPTY_PASSWORD=yes
+      - MYSQL_DATABASE=devops
+
+  spring-appp:
+    image: aziz1123/backend-app:latest
+    depends_on:
+      - mysql
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/devops
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=
+    ports:
+      - "8082:8082"
+
+  angular-app:
+    image: aziz1123/frontend-app:latest
+    ports:
+      - "4200:80"
+    depends_on:
+      - spring-appp
