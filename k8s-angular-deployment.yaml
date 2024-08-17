@@ -3,6 +3,7 @@ kind: Deployment
 metadata:
   name: angular-app
 spec:
+  replicas: {{REPLICAS}}  
   selector:
     matchLabels:
       app: angular-app
