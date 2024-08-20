@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: angular-app
-        image: salah070/frontdeploy:latest
+        image: salah070/frontendcloud:latest
         ports:
         - containerPort: 80
 ---
