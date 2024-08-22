@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: angular-app
-        image: aziz1123/frontt:latest
+        image: aziz1123/frontoffice:latest
         ports:
         - containerPort: 80
 ---
